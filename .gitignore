@@ -1,0 +1,5 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+localstack_data/
+__pycache__/
