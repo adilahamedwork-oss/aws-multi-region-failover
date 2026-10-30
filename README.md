@@ -1,188 +1,207 @@
-# 🌍 Multi-Region Active-Active Failover Architecture on AWS
+🌍 Multi-Region Active-Active Failover Architecture on AWS
 
-[https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white]
-[https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white]
-[https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54]
-[https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white]
-[https://img.shields.io/badge/Amazon%20DynamoDB-4053D6?style=for-the-badge&logo=Amazon%20DynamoDB&logoColor=white]
+A hands-on cloud engineering project exploring multi-region application availability, automated failover, DNS routing, infrastructure automation, and cross-region data replication using AWS technologies.
 
-> **A high-availability cloud engineering project demonstrating automated DNS failover with Amazon Route 53, sub-second cross-region data replication with DynamoDB Global Tables, Infrastructure as Code (Terraform), and Chaos Engineering validation.**
+Project status: In progress — local implementation and testing completed; real AWS multi-region deployment remains pending.
 
-## 📌 Problem Statement
+⸻
 
-Most cloud deployments rely on a single AWS region (e.g., `us-east-1`). When a regional outage occurs, single-region architectures suffer complete downtime and potential data loss until engineers manually intervene.
+📌 Project Overview
 
-This project solves that problem by implementing a **Multi-Region Active-Active Failover Architecture** across **`us-east-1` (Primary)** and **`us-west-2` (Secondary)**:
-- **Recovery Point Objective (RPO):** **~0 seconds** (Continuous bi-directional replication via DynamoDB Global Tables & Streams).
-- **Recovery Time Objective (RTO):** **< 10 seconds** (Automated Route 53 health checks detect regional failure and reroute DNS traffic without human intervention).
+Cloud applications can experience downtime when an application endpoint or an entire region becomes unavailable.
 
-## 🏗️ Visual Architecture Diagram
+This project explores how a multi-region architecture can improve application resilience by combining:
 
-~~~mermaid
-flowchart TB
-    subgraph ClientLayer ["🌐 Client & Edge Layer"]
-        User(["👤 End Users / API Clients"])
-        R53{"🧭 Amazon Route 53\nHosted Zone: failover.internal\n(DNS Failover Policy)"}
-        HC["🩺 Route 53 Health Check\nInterval: 10s | Threshold: 2\nTarget: /_localstack/health"]
-    end
+* Amazon Route 53 for DNS routing and health checks
+* Amazon EC2 for application workloads
+* Elastic Load Balancing for traffic distribution
+* Amazon DynamoDB Global Tables for cross-region data replication
+* Terraform for Infrastructure as Code
+* Python and Boto3 for automation and verification
+* Docker and LocalStack for local cloud-service simulation
 
-    subgraph PrimaryRegion ["🇺🇸 AWS Region 1: us-east-1 (PRIMARY)"]
-        direction TB
-        EP1["⚡ Primary API Endpoint\nIP: 10.0.1.100 (Set: primary-us-east-1)"]
-        DDB1[("🗄️ DynamoDB Table\nGlobalUserSessions (Master)\nStreams: NEW_AND_OLD_IMAGES")]
-        EP1 --> DDB1
-    end
+The long-term objective is to build and validate an architecture in which application workloads operate across two AWS regions and traffic can be directed to a healthy region when a failure occurs.
 
-    subgraph SecondaryRegion ["🇺🇸 AWS Region 2: us-west-2 (SECONDARY)"]
-        direction TB
-        EP2["🛡️ Secondary API Endpoint\nIP: 10.0.2.200 (Set: secondary-us-west-2)"]
-        DDB2[("🗄️ DynamoDB Global Replica\nGlobalUserSessions (Replica)\nActive-Active Sync")]
-        EP2 --> DDB2
-    end
+🏗️ Architecture
 
-    User -->|"1. DNS Query (api.failover.internal)"| R53
-    HC -.->|"Probes HTTP 200 OK"| EP1
-    R53 ==>|"2a. Normal State: Routes to Primary"| EP1
-    R53 -.->|"2b. Outage State: Auto-Failover (<10s)"| EP2
-    DDB1 <==>|"3. Bi-Directional Active-Active Replication (<1s)"| DDB2
+The following illustration represents the target architecture for the project.
 
-    style PrimaryRegion fill:#1e3a2f,stroke:#2ea043,stroke-width:2px,color:#ffffff
-    style SecondaryRegion fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#ffffff
-    style ClientLayer fill:#111827,stroke:#f59e0b,stroke-width:2px,color:#ffffff
-~~~
+Architecture Components
 
-## 🔄 Automated Failover Sequence (What Happens During an Outage)
+Component	Purpose
+Amazon Route 53	DNS routing and health-based traffic management
+Application Load Balancer	Distributes incoming application traffic
+Amazon EC2	Hosts application workloads
+Amazon DynamoDB Global Tables	Supports multi-region data replication
+Terraform	Defines and provisions infrastructure
+Python / Boto3	Automates checks and verification
+Docker / LocalStack	Provides a local AWS service simulation environment
 
-~~~mermaid
-sequenceDiagram
-    autonumber
-    actor Client as 👤 Client Traffic
-    participant R53 as 🧭 Route 53 DNS
-    participant HC as 🩺 Route 53 Health Check
-    participant East as 🟢 Region 1 (us-east-1)
-    participant West as 🔵 Region 2 (us-west-2)
+Architecture note: The diagram illustrates the intended AWS design. The current local implementation is a simulation and does not represent a completed production deployment.
 
-    Note over Client,West: ✅ PHASE 1: Normal Operation (Active-Active)
-    Client->>R53: Resolve api.failover.internal
-    HC->>East: HTTP GET /health (200 OK)
-    R53-->>Client: Returns 10.0.1.100 (us-east-1)
-    Client->>East: Write Session (sess-1793371892)
-    East-->>West: Async DynamoDB Stream Replication (<1s)
+🧪 Implementation and Testing
 
-    Note over Client,West: 🚨 PHASE 2: Regional Outage in us-east-1
-    HC->>East: HTTP GET /health (503 Service Unavailable - Strike 1)
-    HC->>East: HTTP GET /health (503 Service Unavailable - Strike 2)
-    HC->>R53: Mark Primary Health Check UNHEALTHY!
+Completed and locally verified
 
-    Note over Client,West: 🛡️ PHASE 3: Automated Failover to us-west-2
-    Client->>R53: Resolve api.failover.internal (TTL Expired)
-    R53-->>Client: Returns 10.0.2.200 (us-west-2)
-    Client->>West: Read Session (sess-1793371892)
-    West-->>Client: 200 OK (Zero Data Loss - Session Intact!)
-~~~
+* [x]	Configured a LocalStack environment using Docker.
+* [x]	Created a DynamoDB table in the local environment.
+* [x]	Configured a second-region DynamoDB replica simulation.
+* [x]	Verified that an item written in one simulated region could be read independently from the other.
+* [x]	Created a Route 53 hosted zone and primary/secondary failover record configuration in LocalStack.
+* [x]	Built Python application endpoints for primary and secondary regions.
+* [x]	Implemented HTTP health-check-based application routing.
+* [x]	Simulated primary application failure and recovery.
+* [x]	Ran automated application failover tests: 3 out of 3 passed.
 
-## 📊 Architecture Comparison: Single-Region vs. This Architecture
+Current development status
 
-| Metric / Capability | Traditional Single-Region Setup | This Multi-Region Active-Active Setup |
-| :--- | :--- | :--- |
-| **Regional Outage Impact** | Complete application downtime | Seamless traffic shift to `us-west-2` |
-| **Recovery Time Objective (RTO)** | Hours (Manual redeployment) | **< 10 Seconds** (Automated DNS TTL + Health Check) |
-| **Recovery Point Objective (RPO)** | Minutes to Hours (Snapshot backups) | **Near-Zero** (Real-time DynamoDB Global Streams) |
-| **Provisioning Method** | Manual AWS Console clicks | **100% Terraform IaC** (Repeatable & version-controlled) |
-| **Conflict Resolution** | N/A | **Last-Writer-Wins (LWW)** concurrent write handling |
+* [ ]	Deploy application workloads in two real AWS regions.
+* [ ]	Configure and verify real AWS DynamoDB Global Tables.
+* [ ]	Configure real Route 53 health checks and traffic-routing policies.
+* [ ]	Validate actual DNS failover between deployed regional endpoints.
+* [ ]	Measure observed recovery time and data replication behavior.
+* [ ]	Complete and validate the Terraform deployment for the target architecture.
 
-## 📂 Repository Structure
+🔄 Application Failover Simulation
 
-~~~text
+The local Python application demonstrates health-check-based routing.
+
+The tested scenarios include:
+
+1. Normal operation: The router detects a healthy primary endpoint and sends traffic to it.
+2. Primary failure: The primary endpoint becomes unavailable, and the router selects the secondary endpoint.
+3. Primary recovery: Once the primary endpoint becomes healthy again, the router returns traffic to it.
+
+The automated local test suite successfully passed all three scenarios.
+
+Important: This is application-level failover simulation. It is not proof of real Route 53 DNS failover or an actual AWS regional outage.
+
+🗄️ DynamoDB Replication Simulation
+
+The local implementation uses DynamoDB in LocalStack to explore cross-region replication.
+
+The verification process:
+
+1. Writes a unique item to the first simulated region.
+2. Independently reads the item from the second simulated region.
+3. Confirms that the expected item is available.
+
+This validates the configured local replication simulation. Real AWS DynamoDB Global Tables behavior and replication latency have not yet been measured.
+
+🛠️ Technology Stack
+
+Category	Technologies
+Cloud platform	Amazon Web Services
+DNS and routing	Amazon Route 53
+Compute	Amazon EC2
+Load balancing	Application Load Balancer
+Database	Amazon DynamoDB
+Infrastructure as Code	Terraform (HCL)
+Programming	Python
+AWS SDK	Boto3
+Containers	Docker
+Local cloud simulation	LocalStack
+Version control	Git and GitHub
+
+📂 Repository Structure
+
 aws-multi-region-failover/
-├── docker-compose.yml       # LocalStack cloud emulator configuration (Route 53 + DynamoDB)
+│
+├── images/
+│   └── architecture.png
+│
 ├── terraform/
-│   └── main.tf              # IaC definitions: Global Tables, Hosted Zone, Health Checks & Failover Records
-├── verify_failover.py       # Automated Python (Boto3) chaos engineering & replication test script
-├── .gitignore               # Excludes heavy Terraform binaries and local state files
-└── README.md                # Architecture documentation and verification logs
-~~~
+│   └── Terraform configuration files
+│
+├── docker-compose.yml
+├── verify_failover.py
+├── .gitignore
+└── README.md
 
-## 🧪 Live Verification & Chaos Testing Output
+🚀 Running the Local Environment
 
-### 1. Infrastructure Provisioning (`terraform apply`)
-~~~text
-Plan: 5 to add, 0 to change, 0 to destroy.
+Prerequisites
 
-aws_route53_health_check.region1_health: Creation complete after 4s [id=b88f0b19-a7f5-456f-aa2e-e91ff67dab49]
-aws_dynamodb_table.global_sessions: Creation complete after 17s [id=GlobalUserSessions]
-aws_route53_zone.primary_zone: Creation complete after 19s [id=4FZUZ1GK2D512LS]
-aws_route53_record.primary: Creation complete after 16s [id=4FZUZ1GK2D512LS_api.failover.internal_A_primary-us-east-1]
-aws_route53_record.secondary: Creation complete after 16s [id=4FZUZ1GK2D512LS_api.failover.internal_A_secondary-us-west-2]
+* Docker
+* Docker Compose
+* Python 3
+* Terraform
+* Python Boto3 package
 
-Apply complete! Resources: 5 added, 0 changed, 0 destroyed.
+1. Clone the repository
 
-Outputs:
-dynamodb_table_name = "GlobalUserSessions"
-hosted_zone_id = "4FZUZ1GK2D512LS"
-~~~
+git clone https://github.com/adilahamedwork-oss/aws-multi-region-failover.git
+cd aws-multi-region-failover
 
-### 2. Automated Replication & Failover Test (`python3 verify_failover.py`)
-~~~text
-====================================================================
-  AWS MULTI-REGION ACTIVE-ACTIVE FAILOVER & REPLICATION VERIFICATION
-====================================================================
+2. Start the LocalStack environment
 
-[STEP 1] Writing user session 'sess-1793371892' to Primary Region (us-east-1)...
-  ✓ Write confirmed in us-east-1.
+docker compose up -d
 
-[STEP 2] Reading session from Secondary Region (us-west-2) to verify Global Replication...
-  ✓ Cross-Region Replica Verified in us-west-2!
-    -> SessionID : sess-1793371892
-    -> User      : Adil_Ahamed
-    -> Origin    : us-east-1
-    -> Timestamp : 2026-10-30T14:51:32.349453+00:00
+Check the container:
 
-[STEP 3] Auditing Route 53 DNS Failover Routing Policy...
-  ✓ [PRIMARY  ] ID: primary-us-east-1    | Endpoint: 10.0.1.100 | HealthCheck: b88f0b19-a7f5-456f-aa2e-e91ff67dab49
-  ✓ [SECONDARY] ID: secondary-us-west-2  | Endpoint: 10.0.2.200 | HealthCheck: None (Standby)
+docker ps
 
-[STEP 4] Simulating Regional Outage in Primary Region (us-east-1)...
-  ! Injecting failure into Health Check ID: b88f0b19-a7f5-456f-aa2e-e91ff67dab49
-  ! Primary Endpoint (10.0.1.100) returned HTTP 503 (Threshold: 2 consecutive failures)
-  ✓ Route 53 Automated DNS Failover Triggered!
-  ✓ Active Traffic Rerouted: 10.0.1.100 (us-east-1) ---> 10.0.2.200 (us-west-2)
-  ✓ Recovery Point Objective (RPO): 0 data loss | Recovery Time Objective (RTO): < 10 seconds
-====================================================================
-~~~
+3. Install the Python dependency
 
-## 🚀 How to Reproduce Locally (Zero AWS Cost)
+python3 -m pip install boto3
 
-1. **Clone the Repository:**
-   ~~~bash
-   git clone https://github.com/adilahamedwork-oss/aws-multi-region-failover.git
-   cd aws-multi-region-failover
-   ~~~
-2. **Start the LocalStack Cloud Emulator:**
-   ~~~bash
-   docker run -d --name localstack-failover-lab -p 127.0.0.1:4566:4566 -e SERVICES=route53,dynamodb localstack/localstack:3.8.1
-   ~~~
-3. **Deploy Multi-Region Infrastructure with Terraform:**
-   ~~~bash
-   cd terraform && terraform init && terraform apply -auto-approve
-   ~~~
-4. **Run the Automated Failover & Replication Test:**
-   ~~~bash
-   cd .. && python3 verify_failover.py
-   ~~~
+4. Run the verification script
 
-## 🧠 Key Architectural Design Decisions
+python3 verify_failover.py
 
-1. **Why Pay-Per-Request (`PAY_PER_REQUEST`) on DynamoDB Global Tables?**  
-   During a regional failover, traffic in the secondary region (`us-west-2`) spikes instantly by 100%. Using On-Demand capacity prevents `ProvisionedThroughputExceededException` throttling during disaster recovery without over-provisioning idle capacity.
-2. **Why `TTL = 10` Seconds on Route 53 Failover Records?**  
-   Standard DNS records often use 300s (5-minute) TTLs, which causes client resolvers to cache dead IPs during an outage. Lowering the TTL to `10s` ensures clients rapidly pick up the secondary region's IP once the health check trips.
-3. **Why Enable `NEW_AND_OLD_IMAGES` on DynamoDB Streams?**  
-   DynamoDB Global Tables rely on DynamoDB Streams under the hood to propagate item-level creates, updates, and deletes across regions asynchronously while maintaining Last-Writer-Wins consistency.
+The verification script checks the configured local DynamoDB replication and Route 53 resources.
 
-## 👤 Author
+Note: These instructions describe the local simulation. Terraform deployment against real AWS is not part of the verified local test procedure. Review the Terraform configuration, AWS account permissions, and execution plan before any real AWS apply operation.
 
-**Adil Ahamed B**  
-- 💼 **LinkedIn:** [linkedin.com/in/adil-ahamed-b-13b935279](https://linkedin.com/in/adil-ahamed-b-13b935279)
-- 🌐 **Portfolio:** [adil-ahamed-b.vercel.app](https://adil-ahamed-b.vercel.app)
-- 📧 **Email:** [adil.ahamedwork@gmail.com](mailto:adil.ahamedwork@gmail.com)
+📊 Validation and Results
+
+Test	Result
+LocalStack environment	Verified
+Simulated cross-region data read	Passed
+Route 53 configuration inspection	Passed
+Primary application routing	Passed
+Secondary application routing during simulated outage	Passed
+Primary recovery	Passed
+Automated application failover scenarios	3/3 passed
+Real AWS regional failover	Not yet tested
+Production DNS failover	Not yet tested
+Production RPO / RTO	Not yet measured
+
+No production RPO or RTO guarantees are claimed at this stage.
+
+🎯 Learning Objectives
+
+Through this project, I am developing practical knowledge of:
+
+* Multi-region cloud architecture
+* High availability and disaster recovery
+* DNS-based traffic management
+* Application health checks
+* Database replication concepts
+* Infrastructure as Code
+* Python cloud automation
+* Failure simulation and recovery testing
+
+🔮 Future Improvements
+
+* Deploy application workloads in two real AWS regions.
+* Implement real multi-region DynamoDB Global Tables.
+* Configure Route 53 latency-based or other suitable health-aware routing.
+* Validate traffic distribution and regional failover.
+* Measure actual recovery time and replication behavior.
+* Improve infrastructure automation and testing.
+* Add monitoring, logging, and operational visibility.
+
+👨‍💻 Author
+
+Adil Ahamed B
+
+Aspiring Cloud Security / Cloud Engineer
+
+* GitHub: https://github.com/adilahamedwork-oss
+* Portfolio: https://adil-ahamed-b.vercel.app
+* LinkedIn: https://www.linkedin.com/in/adil-ahamed-b-13b935279/
+
+⸻
+
+Built as a hands-on cloud engineering learning project. The implementation is evolving from local infrastructure simulation toward a validated multi-region AWS deployment.
